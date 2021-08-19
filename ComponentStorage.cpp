@@ -15,8 +15,8 @@ ComponentStorage::ComponentStorage(const Component& type): Type(type),
 
 ComponentStorage::~ComponentStorage()
 {
-    free(Data);
-    free(SwapBuffer);
+    delete [] Data;
+    delete [] SwapBuffer;
 }
 
 void ComponentStorage::Grow()
@@ -28,12 +28,8 @@ void ComponentStorage::Grow()
     }
     MaxCount += Growth;
     char* NewData = new char[MaxCount * Type.Size];
-    if (!NewData)
-    {
-        Error("Failed to malloc\n");
-    }
-    delete [] Data;
     memmove(NewData, Data, Count * Type.Size);
+    delete [] Data;
     Data = NewData;
 }
 
