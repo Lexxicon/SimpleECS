@@ -1,6 +1,7 @@
 ﻿#include "Archetype.h"
 
 #include "ErrorHandling.h"
+#include "Types.h"
 
 ArchSignature::ArchSignature(const ArchSignature& other): Value(other.Value)
 {
