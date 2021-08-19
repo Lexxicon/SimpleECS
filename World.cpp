@@ -1,5 +1,6 @@
 ﻿#include "World.h"
 
+#include "Component.h"
 #include "Entity.h"
 #include "ErrorHandling.h"
 
@@ -78,7 +79,7 @@ void World::Set(const EntityID& Entity, Component Type, const void* Data)
         {
             Queue = SetQueues[Type.ID] = new SetQueue(Type);
         }
-        Queue->Enqueue(Entity, &Data);
+        Queue->Enqueue(Entity, Data);
         return;
     }
     Archetype* CurrentArchetype = Archetypes[EntityArchetypeLookup[Entity]];
@@ -216,6 +217,13 @@ void World::Tick()
             }
             Kvp.second->Empty();
         }
+
+        for(int i = Graveyard->GetCount() - 1; i >= 0; i--)
+        {
+            EntityID* E = reinterpret_cast<EntityID*>(Graveyard->GetValue(i));
+            Delete(*E);
+        }
+        Graveyard->Empty();
     }
 }
 

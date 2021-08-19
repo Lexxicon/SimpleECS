@@ -34,25 +34,41 @@ int main()
             GetComponent<Velocity>().ID
         }),
         [](World* w, Entity e)
-    {
-        auto Pos = e.Get<Position>();
-        auto Vel = e.Get<Velocity>();
-        Pos->X += Vel->X;
-        Pos->Y += Vel->Y;
-    }});
+        {
+            auto Pos = e.Get<Position>();
+            auto Vel = e.Get<Velocity>();
+            Pos->X += Vel->X;
+            Pos->Y += Vel->Y;
+        }});
     
     Wld.AddSystem({
         MakeSig({GetComponent<Position>().ID}),
         [](World* w, Entity e)
+        {
+            auto Pos = e.Get<Position>();
+            printf("Data for %d: %f, %f\n", e.GetID(), Pos->X, Pos->Y);
+        }});
+
+    Wld.AddSystem({
+        MakeSig({GetComponent<Position>().ID}),
+        [](World* w, Entity e)
+            {
+                auto Pos = e.Get<Position>();
+                if(Pos->X > 10 || Pos->X < -10
+                    ||Pos->Y > 10 || Pos->Y < -10)
+                {
+                    printf("Killing %d\n", e.GetID());
+                    w->NewEntity()
+                        .Set<Position>({0, 1})
+                        .Set<Velocity>({1, -0.5});
+                    w->Delete(e.GetID());
+                }
+            }});
+
+    for(int i = 0; i < 100; i++)
     {
-        auto Pos = e.Get<Position>();
-        printf("Data for %d: %f, %f\n", e.GetID(), Pos->X, Pos->Y);
-    }});
-    
-    Wld.Tick();
-    Wld.Tick();
-    E2.Remove<Velocity>();
-    Wld.Tick();
+        Wld.Tick();
+    }
     
     return 0;
 }
