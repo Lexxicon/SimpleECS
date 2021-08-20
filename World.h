@@ -55,7 +55,8 @@ public:
     T* Get(const EntityID& Entity)
     {
         ComponentID Type = GetComponent<T>();
-        return static_cast<T*>(Get(Entity, Type));
+        void* R = Get(Entity, Type);
+        return static_cast<T*>(R);
     }
     void* Get(const EntityID& Entity, ComponentID Type);
     

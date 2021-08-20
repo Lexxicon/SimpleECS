@@ -6,19 +6,16 @@
 
 struct MyData
 {
-    float X;
+    float X1;
+    float X2;
+    float X3;
+    float X4;
+    float X5;
 };
 
 int main()
 {
-    // Movement();
-
-    World Wrld;
-
-    auto E1 = Wrld.NewEntity();
-    MyData D = ;
-    E1.Set<MyData>({5});
-    printf("%f\n", E1.Get<MyData>()->X);
+    Movement();
     
     return 0;
 }

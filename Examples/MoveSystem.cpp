@@ -49,7 +49,7 @@ int Movement()
         [](World* w, Entity e)
         {
             auto Pos = e.Get<Position>();
-            printf("Data for %d: %f, %f\n", e.GetID(), Pos->X, Pos->Y);
+            Trace("Data for %d: %f, %f\n", e.GetID(), Pos->X, Pos->Y);
         }});
 
     Wld.AddSystem({
@@ -62,7 +62,7 @@ int Movement()
             if(Pos->X > 10 || Pos->X < -10
                 ||Pos->Y > 10 || Pos->Y < -10)
             {
-                printf("Killing %d\n", e.GetID());
+                Trace("Killing %d\n", e.GetID());
                 w->NewEntity()
                     .Set<Position>({0, 1})
                     .Set<Velocity>({1, -0.5});

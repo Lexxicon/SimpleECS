@@ -76,7 +76,7 @@ void World::Set(EntityID Entity, ComponentID Type, const void* Data)
         {
             Queue = SetQueues[Type] = new SetQueue(MakeStorageForID(Type));
         }
-        Queue->Enqueue(Entity, &Data);
+        Queue->Enqueue(Entity, Data);
         return;
     }
         
@@ -86,10 +86,10 @@ void World::Set(EntityID Entity, ComponentID Type, const void* Data)
     //Not in current archetype. Move entity to new table.
     if (ContainsType == CurrentArchetype->GetSignature()->end())
     {
-        CurrentArchetype = ChangeEntityType(Entity, Type, &Data);
+        CurrentArchetype = ChangeEntityType(Entity, Type, Data);
     }
 
-    CurrentArchetype->SetValue(Entity, Type, &Data);
+    CurrentArchetype->SetValue(Entity, Type, Data);
 }
 
 void* World::Get(const EntityID& Entity, ComponentID Type)
