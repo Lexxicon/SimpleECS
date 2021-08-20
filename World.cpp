@@ -1,13 +1,13 @@
 ﻿#include "World.h"
 
-#include "Component.h"
+#include "Types.h"
 #include "Entity.h"
 #include "ErrorHandling.h"
 
-SetQueue::SetQueue(const Component CmpType)
+SetQueue::SetQueue(IStorage* Storage)
 {
-    EntityIDs = new ComponentStorage(GetComponent<EntityID>());
-    ComponentBuffer = new ComponentStorage(CmpType);
+    EntityIDs = new VectorStorage<EntityID>();
+    ComponentBuffer = Storage;
 }
 
 SetQueue::~SetQueue()
@@ -18,27 +18,24 @@ SetQueue::~SetQueue()
 
 void SetQueue::Enqueue(EntityID Entity, const void* Data) const
 {
-    auto index = EntityIDs->GetCount();
-    EntityIDs->AddValue();
-    EntityIDs->SetValue(index, &Entity);
-    ComponentBuffer->AddValue();
-    ComponentBuffer->SetValue(index, Data);
+    EntityIDs->AddRawData(&Entity);
+    ComponentBuffer->AddRawData(Data);
 }
 
-void SetQueue::ForEach(std::function<void(EntityID&, char*)> Handler)
+void SetQueue::ForEach(std::function<void(EntityID&, void*)> Handler)
 {
-    for (int i = 0; i < EntityIDs->GetCount(); i++)
+    for (size_t i = 0; i < EntityIDs->GetSize(); i++)
     {
-        EntityID* Id = reinterpret_cast<EntityID*>(EntityIDs->GetValue(i));
-        char* Data = ComponentBuffer->GetValue(i);
+        EntityID* Id = static_cast<EntityID*>(EntityIDs->GetRawData(i));
+        void* Data = ComponentBuffer->GetRawData(i);
         Handler(*Id, Data);
     }
 }
 
 World::World()
 {
-    Archetype* Empty = new Archetype(MakeSig({}));
-    Graveyard = new ComponentStorage(GetComponent<EntityID>());
+    Archetype* Empty = new Archetype();
+    Graveyard = new VectorStorage<EntityID>();
 
     Archetypes.emplace_back(Empty);
     ArchSignature Sig = *Empty->GetSignature();
@@ -66,66 +63,68 @@ Entity World::NewEntity()
 {
     EntityID E = NextEntityID++;
     EntityArchetypeLookup.emplace(E, 0);
-    Archetypes[0]->AddEntity(E);
+    Archetypes[0]->CopyEntity(E, nullptr, 0, nullptr);
     return Entity(this, E);
 }
 
-void World::Set(const EntityID& Entity, Component Type, const void* Data)
+void World::Set(EntityID Entity, ComponentID Type, const void* Data)
 {
     if (WorldLock)
     {
-        auto Queue = SetQueues[Type.ID];
+        auto Queue = SetQueues[Type];
         if (Queue == nullptr)
         {
-            Queue = SetQueues[Type.ID] = new SetQueue(Type);
+            Queue = SetQueues[Type] = new SetQueue(MakeStorageForID(Type));
         }
-        Queue->Enqueue(Entity, Data);
+        Queue->Enqueue(Entity, &Data);
         return;
     }
+        
     Archetype* CurrentArchetype = Archetypes[EntityArchetypeLookup[Entity]];
-    auto ContainsType = CurrentArchetype->GetSignature()->Value.find(Type.ID);
+    auto ContainsType = CurrentArchetype->GetSignature()->find(Type);
 
     //Not in current archetype. Move entity to new table.
-    if (ContainsType == CurrentArchetype->GetSignature()->Value.end())
+    if (ContainsType == CurrentArchetype->GetSignature()->end())
     {
-        ArchSignature NewSig(CurrentArchetype->GetSignature()->Value);
-        NewSig.Value.emplace(Type.ID);
-        Archetype* NewArchetype = FindOrAddArchetype(NewSig);
-        MoveEntity(Entity, CurrentArchetype, NewArchetype);
-        CurrentArchetype = NewArchetype;
+        CurrentArchetype = ChangeEntityType(Entity, Type, &Data);
     }
 
-    CurrentArchetype->SetValue(Entity, Type.ID, Data);
+    CurrentArchetype->SetValue(Entity, Type, &Data);
 }
 
-void World::Remove(const EntityID& Entity, Component Type)
+void* World::Get(const EntityID& Entity, ComponentID Type)
+{
+    Archetype* CurrentArchetype = Archetypes[EntityArchetypeLookup[Entity]];
+    auto ContainsType = CurrentArchetype->GetSignature()->find(Type);
+        
+    if(ContainsType == CurrentArchetype->GetSignature()->end())
+    {
+        return nullptr;
+    }
+    void* result = CurrentArchetype->GetValue(Entity, Type);
+    return result;
+}
+
+void World::Remove(const EntityID& Entity, ComponentID Type)
 {
     if (WorldLock)
     {
-        auto Queue = RemoveQueues[Type.ID];
+        auto Queue = RemoveQueues[Type];
         if (Queue == nullptr)
         {
-            Queue = RemoveQueues[Type.ID] = new ComponentStorage(GetComponent<EntityID>());
+            Queue = RemoveQueues[Type] = new VectorStorage<EntityID>();
         }
-        auto index = Queue->GetCount();
-        Queue->AddValue();
-        Queue->SetValue(index, &Entity);
+        Queue->AddRawData(&Entity);
         return;
     }
-    Archetype* CurrentArchetype = Archetypes[EntityArchetypeLookup[Entity]];
-
-    ArchSignature NewSig(CurrentArchetype->GetSignature()->Value);
-    NewSig.Value.erase(Type.ID);
-    Archetype* NewArchetype = FindOrAddArchetype(NewSig);
-    MoveEntity(Entity, CurrentArchetype, NewArchetype);
+    ChangeEntityType(Entity, Type, nullptr);
 }
 
 void World::Delete(const EntityID& Entity)
 {
     if (WorldLock)
     {
-        Graveyard->AddValue();
-        Graveyard->SetValue(Graveyard->GetCount() - 1, &Entity);
+        Graveyard->AddRawData(&Entity);
         return;
     }
     Archetype* CurrentArchetype = Archetypes[EntityArchetypeLookup[Entity]];
@@ -133,51 +132,46 @@ void World::Delete(const EntityID& Entity)
     EntityArchetypeLookup.erase(Entity);
 }
 
-Archetype* World::FindOrAddArchetype(const ArchSignature& Signature)
+Archetype* World::FindOrAddArchetype(const ArchSignature* Signature)
 {
-    auto SigExists = ArchetypeLookup.find(Signature);
-    size_t ArchIndex;
-    if (SigExists == ArchetypeLookup.end())
+    if (WorldLock)
     {
-        if (WorldLock)
-        {
-            Error("Cannot make new archetypes while world is locked");
-        }
-        ArchIndex = Archetypes.size();
-        Archetype* NewArch = new Archetype(Signature);
+        Error("Cannot make new archetypes while world is locked");
+    }
+    auto Found = ArchetypeLookup.find(*Signature);
+    if (Found == ArchetypeLookup.end())
+    {
+        Archetype* NewArch = new Archetype(*Signature);
+        ArchetypeLookup.emplace(*Signature, Archetypes.size());
         Archetypes.emplace_back(NewArch);
-        ArchetypeLookup.emplace(Signature, ArchIndex);
         for (auto& System : Systems)
         {
             System.TryAddMatch(NewArch);
         }
+        return NewArch;
     }
-    else
-    {
-        ArchIndex = SigExists->second;
-    }
-    return Archetypes[ArchIndex];
+    return Archetypes[Found->second];
 }
 
-void World::MoveEntity(const EntityID& Entity, Archetype* Src, Archetype* Dest)
+Archetype* World::ChangeEntityType(const EntityID& Entity, ComponentID Type, const void* Data)
 {
-    if (WorldLock)
+    
+    Archetype* CurrentArchetype = Archetypes[EntityArchetypeLookup[Entity]];
+
+    ArchSignature NewSig = *CurrentArchetype->GetSignature();
+    if(Data == nullptr)
     {
-        Error("Move requested for %d while world is locked", Entity);
-    }
-
-    if (Src == Dest) return;
-
-    Dest->AddEntity(Entity);
-    for (auto CmpID : Src->GetSignature()->Value)
+        NewSig.erase(Type);
+    }else
     {
-        if (Dest->GetSignature()->Value.find(CmpID) == Dest->GetSignature()->Value.end()) continue;
-
-        const char* CmpData = Src->GetValue(Entity, CmpID);
-        Dest->SetValue(Entity, CmpID, CmpData);
+        NewSig.emplace(Type);
     }
-    Src->FastDelete(Entity);
-    EntityArchetypeLookup[Entity] = ArchetypeLookup[*Dest->GetSignature()];
+    Archetype* NewArchetype = FindOrAddArchetype(&NewSig);
+    NewArchetype->CopyEntity(Entity, CurrentArchetype, Type, Data);
+    CurrentArchetype->FastDelete(Entity);
+    EntityArchetypeLookup[Entity] = ArchetypeLookup[*NewArchetype->GetSignature()];
+    
+    return NewArchetype;
 }
 
 void World::Tick()
@@ -188,9 +182,9 @@ void World::Tick()
         for (auto Archetype : *System.GetMatchedArchetypes())
         {
             auto Entities = Archetype->GetEntityIDs();
-            for (int i = Entities->GetCount() - 1; i >= 0; i--)
+            for (int i = Entities->GetSize() - 1; i >= 0; i--)
             {
-                EntityID* Id = reinterpret_cast<EntityID*>(Entities->GetValue(i));
+                EntityID* Id = static_cast<EntityID*>(Entities->GetRawData(i));
                 Entity E(this, *Id);
                 System.GetHandler()(this, E);
             }
@@ -199,28 +193,26 @@ void World::Tick()
 
         for (auto Kvp : SetQueues)
         {
-            Component Cmp = GetComponentByID(Kvp.first);
-            Kvp.second->ForEach([&](EntityID& Entity, char* Data)
+            Kvp.second->ForEach([&](EntityID& Entity, const void* Data)
             {
-                this->Set(Entity, Cmp, Data);
+                this->Set(Entity, Kvp.first, Data);
             });
             Kvp.second->Empty();
         }
 
         for (auto Kvp : RemoveQueues)
         {
-            Component Cmp = GetComponentByID(Kvp.first);
-            for (int i = 0; i < Kvp.second->GetCount(); i++)
+            for (size_t i = 0; i < Kvp.second->GetSize(); i++)
             {
-                EntityID* E = reinterpret_cast<EntityID*>(Kvp.second->GetValue(i));
-                Remove(*E, Cmp);
+                EntityID* E = static_cast<EntityID*>(Kvp.second->GetRawData(i));
+                Remove(*E, Kvp.first);
             }
             Kvp.second->Empty();
         }
 
-        for(int i = Graveyard->GetCount() - 1; i >= 0; i--)
+        for(int i = Graveyard->GetSize() - 1; i >= 0; i--)
         {
-            EntityID* E = reinterpret_cast<EntityID*>(Graveyard->GetValue(i));
+            EntityID* E = static_cast<EntityID*>(Graveyard->GetRawData(i));
             Delete(*E);
         }
         Graveyard->Empty();

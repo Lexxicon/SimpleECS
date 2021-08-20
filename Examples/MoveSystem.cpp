@@ -30,10 +30,10 @@ int Movement()
         .Set<Velocity>({-1.1f, -0.2f});
     
     Wld.AddSystem({
-        MakeSig({
-            GetComponent<Position>().ID,
-            GetComponent<Velocity>().ID
-        }),
+        {
+            GetComponent<Position>(),
+            GetComponent<Velocity>()
+        },
         [](World* w, Entity e)
         {
             auto Pos = e.Get<Position>();
@@ -43,7 +43,9 @@ int Movement()
         }});
     
     Wld.AddSystem({
-        MakeSig({GetComponent<Position>().ID}),
+        {
+            GetComponent<Position>()
+        },
         [](World* w, Entity e)
         {
             auto Pos = e.Get<Position>();
@@ -51,7 +53,9 @@ int Movement()
         }});
 
     Wld.AddSystem({
-        MakeSig({GetComponent<Position>().ID}),
+        {
+            GetComponent<Position>()
+        },
         [](World* w, Entity e)
         {
             auto Pos = e.Get<Position>();

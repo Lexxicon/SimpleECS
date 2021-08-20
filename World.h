@@ -1,9 +1,10 @@
 ﻿#pragma once
 #include <functional>
 
+#include "Types.h"
 #include "Archetype.h"
 #include "Component.h"
-#include "ComponentStorage.h"
+#include "ErrorHandling.h"
 #include "System.h"
 
 class Entity;
@@ -11,14 +12,14 @@ class Entity;
 class SetQueue
 {
 public:
-    SetQueue(const Component CmpType);
+    SetQueue(IStorage* Storage);
 
     ~SetQueue();
     SetQueue(const SetQueue& obj) = delete;
 
     void Enqueue(EntityID Entity, const void* Data) const;
 
-    void ForEach(std::function<void(EntityID&, char*)> Handler);
+    void ForEach(std::function<void(EntityID&, void*)> Handler);
 
     void Empty()
     {
@@ -27,8 +28,8 @@ public:
     }
 
 private:
-    ComponentStorage* EntityIDs;
-    ComponentStorage* ComponentBuffer;
+    VectorStorage<EntityID>* EntityIDs;
+    IStorage* ComponentBuffer;
 };
 
 class World
@@ -43,42 +44,34 @@ public:
     Entity NewEntity();
 
     template<typename T>
-    void Set(const EntityID& Entity, const T& Data)
+    void Set(const EntityID& Entity, const T Data)
     {
-        Set(Entity, GetComponent<T>(), &Data);
+        ComponentID Type = GetComponent<T>();
+        Set(Entity, Type, &Data);
     }
-
-    void Set(const EntityID& Entity, Component Type, const void* Data);
+    void Set(EntityID Entity, ComponentID Type, const void* Data);
 
     template<typename T>
     T* Get(const EntityID& Entity)
     {
-        Archetype* CurrentArchetype = Archetypes[EntityArchetypeLookup[Entity]];
-        Component Type = GetComponent<T>();
-        auto ContainsType = CurrentArchetype->GetSignature()->Value.find(Type.ID);
-        
-        //Not in current archetype. Move entity to new table.
-        if(ContainsType == CurrentArchetype->GetSignature()->Value.end())
-        {
-            return nullptr;
-        }
-        return CurrentArchetype->GetValue<T>(Entity);
+        ComponentID Type = GetComponent<T>();
+        return static_cast<T*>(Get(Entity, Type));
     }
-
+    void* Get(const EntityID& Entity, ComponentID Type);
     
-
     template<typename T>
     void Remove(const EntityID& Entity)
     {
         Remove(Entity, GetComponent<T>());
     }
-
-    void Remove(const EntityID& Entity, Component Type);
+    void Remove(const EntityID& Entity, ComponentID Type);
+    
     void Delete(const EntityID& Entity);
 
 private:
-    Archetype* FindOrAddArchetype(const ArchSignature& Signature);
-    void MoveEntity(const EntityID& Entity, Archetype* Src, Archetype* Dest);
+    Archetype* FindOrAddArchetype(const ArchSignature* Signature);
+    Archetype* ChangeEntityType(const EntityID& Entity, ComponentID Type, const void* Data);
+
 public:
     void Tick();
     void AddSystem(System System);
@@ -91,8 +84,8 @@ private:
     std::unordered_map<EntityID, size_t> EntityArchetypeLookup;
 
     std::unordered_map<ComponentID, SetQueue*> SetQueues;
-    std::unordered_map<ComponentID, ComponentStorage*> RemoveQueues;
-    ComponentStorage* Graveyard;
+    std::unordered_map<ComponentID, IStorage*> RemoveQueues;
+    VectorStorage<EntityID>* Graveyard;
     
     std::vector<System> Systems;
 };

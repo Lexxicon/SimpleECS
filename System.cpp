@@ -19,9 +19,10 @@ std::function<void(World*, Entity&)> System::GetHandler() const
 void System::TryAddMatch(Archetype* Arch)
 {
     const ArchSignature& ArchSig = *Arch->GetSignature();
-    for (auto CmpID : Signature.Value)
+    for (auto CmpID : Signature)
     {
-        if (ArchSig.Value.find(CmpID) == ArchSig.Value.end())
+        const auto Found = ArchSig.find(CmpID);
+        if (Found == ArchSig.end())
         {
             return;
         }
